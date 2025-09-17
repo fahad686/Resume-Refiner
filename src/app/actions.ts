@@ -5,6 +5,11 @@ import {
   type ATSKeywordOptimizationInput,
   type ATSKeywordOptimizationOutput,
 } from '@/ai/flows/ats-keyword-optimization';
+import {
+  improveResumeSummary,
+  type ResumeSummaryImprovementInput,
+  type ResumeSummaryImprovementOutput,
+} from '@/ai/flows/resume-summary-improvement';
 
 export async function optimizeResume(
   input: ATSKeywordOptimizationInput
@@ -19,5 +24,17 @@ export async function optimizeResume(
     console.error('Error optimizing resume:', error);
     // This will be caught by the client and can be displayed in a toast.
     throw new Error('Failed to optimize resume. Please try again.');
+  }
+}
+
+export async function improveSummaryAction(
+  input: ResumeSummaryImprovementInput
+): Promise<ResumeSummaryImprovementOutput> {
+  try {
+    const result = await improveResumeSummary(input);
+    return result;
+  } catch (error) {
+    console.error('Error improving summary:', error);
+    throw new Error('Failed to improve summary. Please try again.');
   }
 }

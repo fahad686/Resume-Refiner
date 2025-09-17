@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Loader2, Download, Wand2, FileText, FileCheck, AlertTriangle } from "lucide-react";
+import { Loader2, Download, Wand2, FileText, FileCheck, AlertTriangle, Sparkles } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -11,8 +11,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import { optimizeResume } from "@/app/actions";
+import { optimizeResume, improveSummaryAction } from "@/app/actions";
 import type { ATSKeywordOptimizationOutput } from "@/ai/flows/ats-keyword-optimization";
+import type { ResumeSummaryImprovementOutput } from "@/ai/flows/resume-summary-improvement";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -24,7 +25,9 @@ export default function Home() {
   const [jobDescription, setJobDescription] = useState("");
   const [editedResume, setEditedResume] = useState("");
   const [optimizationResult, setOptimizationResult] = useState<ATSKeywordOptimizationOutput | null>(null);
+  const [summaryResult, setSummaryResult] = useState<ResumeSummaryImprovementOutput | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isImprovingSummary, setIsImprovingSummary] = useState(false);
   const { toast } = useToast();
   const resumePreviewRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState("editor");
@@ -47,6 +50,7 @@ export default function Home() {
     }
     setIsLoading(true);
     setOptimizationResult(null);
+    setSummaryResult(null);
     try {
       const result = await optimizeResume({ resumeText, jobDescription });
       setOptimizationResult(result);
@@ -59,6 +63,31 @@ export default function Home() {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleImproveSummary = async () => {
+    if (!editedResume.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Missing Resume",
+        description: "Please provide your resume text or run the optimization first.",
+      });
+      return;
+    }
+    setIsImprovingSummary(true);
+    try {
+      const result = await improveSummaryAction({ resumeText: editedResume });
+      setSummaryResult(result);
+      setActiveTab("summary");
+    } catch (error) {
+       toast({
+        variant: "destructive",
+        title: "Summary Improvement Failed",
+        description: error instanceof Error ? error.message : "An unknown error occurred.",
+      });
+    } finally {
+      setIsImprovingSummary(false);
     }
   };
 
@@ -212,13 +241,16 @@ export default function Home() {
               {isLoading ? (
                 <div className="space-y-4">
                   <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-[380px] w-full" />
+                  <Skeleton className="h-40 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-40 w-full" />
                 </div>
               ) : optimizationResult ? (
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                  <TabsList className="grid w-full grid-cols-3">
+                  <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="editor">Editor</TabsTrigger>
                     <TabsTrigger value="keywords">Keywords</TabsTrigger>
+                    <TabsTrigger value="summary">Summary</TabsTrigger>
                     <TabsTrigger value="format">Format Check</TabsTrigger>
                   </TabsList>
                   <TabsContent value="editor" className="mt-4">
@@ -256,6 +288,22 @@ export default function Home() {
                         )}
                       </div>
                     </div>
+                  </TabsContent>
+                   <TabsContent value="summary" className="min-h-[380px] space-y-4 mt-4">
+                      <Button onClick={handleImproveSummary} disabled={isImprovingSummary || !editedResume} size="sm" className="w-full">
+                        {isImprovingSummary ? (
+                          <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating...</>
+                        ) : (
+                          <><Sparkles className="mr-2 h-4 w-4" />Improve Summary with AI</>
+                        )}
+                      </Button>
+                      {isImprovingSummary && !summaryResult && <Skeleton className="h-32 w-full" />}
+                      {summaryResult && (
+                        <div className="p-4 border rounded-lg bg-secondary/50">
+                          <h3 className="font-semibold mb-2">AI-Suggested Summary</h3>
+                          <p className="text-sm text-secondary-foreground">{summaryResult.improvedSummary}</p>
+                        </div>
+                      )}
                   </TabsContent>
                   <TabsContent value="format" className="min-h-[380px] space-y-3 mt-4">
                      {formatCheckResults.map((item, index) => (
