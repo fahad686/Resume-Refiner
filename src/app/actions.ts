@@ -21,10 +21,12 @@ export async function optimizeResume(
 ): Promise<ATSKeywordOptimizationOutput> {
   try {
     const result = await atsKeywordOptimization(input);
-    // The AI flow is a placeholder and returns the original resume.
-    // In a real app, it would return an optimized version.
-    // We return the result as is, which includes missing/suggested keywords.
-    return result;
+    // In a real app, the AI flow would return an optimized resume.
+    // For now, we return the original text but still provide keyword analysis.
+    return {
+      ...result,
+      optimizedResume: input.resumeText, // Return original text for now
+    };
   } catch (error) {
     console.error('Error optimizing resume:', error);
     // This will be caught by the client and can be displayed in a toast.

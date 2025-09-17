@@ -44,81 +44,6 @@ export async function atsKeywordOptimization(
   return atsKeywordOptimizationFlow(input);
 }
 
-const getMissingKeywords = ai.defineTool({
-  name: 'getMissingKeywords',
-  description:
-    'Identifies keywords missing from the resume based on the job description.',
-  inputSchema: z.object({
-    resumeText: z
-      .string()
-      .describe('The text content of the resume to be optimized.'),
-    jobDescription: z
-      .string()
-      .describe('The job description used to identify missing keywords.'),
-  }),
-  outputSchema: z.array(z.string()),
-  async resolve(input) {
-    // Placeholder implementation for identifying missing keywords.
-    // In a real application, this would involve NLP techniques to extract
-    // relevant keywords from the job description and compare them against the
-    // resume text.
-    const jobDescriptionKeywords = input.jobDescription
-      .toLowerCase()
-      .split(/\s+/);
-    const resumeKeywords = input.resumeText.toLowerCase().split(/\s+/);
-
-    const missingKeywords = jobDescriptionKeywords.filter(
-      keyword => !resumeKeywords.includes(keyword)
-    );
-
-    return missingKeywords;
-  },
-});
-
-const suggestKeywords = ai.defineTool({
-  name: 'suggestKeywords',
-  description:
-    'Suggests keywords to add to the resume based on the job description.',
-  inputSchema: z.object({
-    jobDescription: z
-      .string()
-      .describe('The job description used to suggest keywords.'),
-  }),
-  outputSchema: z.array(z.string()),
-  async resolve(input) {
-    // Placeholder implementation for suggesting keywords.
-    // In a real application, this would involve NLP techniques to extract
-    // relevant keywords from the job description and provide synonyms or related terms.
-    const jobDescriptionKeywords = input.jobDescription
-      .toLowerCase()
-      .split(/\s+/);
-    // Basic suggestion: return the keywords from the job description itself
-    return jobDescriptionKeywords;
-  },
-});
-
-const prompt = ai.definePrompt({
-  name: 'atsKeywordOptimizationPrompt',
-  input: {schema: ATSKeywordOptimizationInputSchema},
-  output: {schema: ATSKeywordOptimizationOutputSchema},
-  tools: [getMissingKeywords, suggestKeywords],
-  prompt: `You are an AI resume optimization expert. 
-
-Given the following resume text: 
-
-{{resumeText}}
-
-And the following job description:
-
-{{jobDescription}}
-
-Identify missing keywords from the resume based on the job description using the getMissingKeywords tool.
-Suggest keywords to add to the resume based on the job description using the suggestKeywords tool.
-
-Optimize the resume by incorporating the suggested keywords where appropriate.
-`,
-});
-
 const atsKeywordOptimizationFlow = ai.defineFlow(
   {
     name: 'atsKeywordOptimizationFlow',
@@ -126,22 +51,25 @@ const atsKeywordOptimizationFlow = ai.defineFlow(
     outputSchema: ATSKeywordOptimizationOutputSchema,
   },
   async input => {
-    const missingKeywords = await getMissingKeywords(input);
-    const suggestedKeywords = await suggestKeywords({
-      jobDescription: input.jobDescription,
+    const { output } = await ai.generate({
+      prompt: `You are an expert ATS optimization tool.
+      Analyze the provided resume text and job description.
+      Resume:
+      ${input.resumeText}
+
+      Job Description:
+      ${input.jobDescription}
+
+      1. Identify and list important keywords and skills from the job description that are missing from the resume.
+      2. Suggest a list of relevant keywords to add to the resume based on the job description.
+      3. Provide an optimized version of the resume that strategically incorporates some of the missing keywords. Maintain the original format and tone of the resume as much as possible.
+
+      Return your response in a JSON format with three keys: 'missingKeywords', 'suggestedKeywords', and 'optimizedResume'.`,
+      output: {
+        schema: ATSKeywordOptimizationOutputSchema,
+      },
+      model: 'googleai/gemini-2.5-flash',
     });
-    const {output} = await prompt({
-      ...input,
-      missingKeywords,
-      suggestedKeywords,
-    });
-    // Basic implementation: just return the original resume text.
-    // In a real application, this function would use the missing and suggested
-    // keywords to modify the resume text.
-    return {
-      optimizedResume: input.resumeText,
-      missingKeywords: missingKeywords,
-      suggestedKeywords: suggestedKeywords,
-    };
+    return output!;
   }
 );

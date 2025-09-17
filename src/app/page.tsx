@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Loader2, Download, Wand2, FileText, FileCheck, AlertTriangle, Sparkles } from "lucide-react";
+import { Loader2, Download, Wand2, FileText, FileCheck, AlertTriangle, Sparkles, Upload } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -18,6 +18,7 @@ import type { ExperienceImprovementOutput } from "@/ai/flows/experience-improvem
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import * as pdfjsLib from 'pdfjs-dist';
 
 type ResumeStyle = "theme-classic" | "theme-modern" | "theme-compact";
 
@@ -29,12 +30,19 @@ export default function Home() {
   const [summaryResult, setSummaryResult] = useState<ResumeSummaryImprovementOutput | null>(null);
   const [experienceResult, setExperienceResult] = useState<ExperienceImprovementOutput | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [isImprovingSummary, setIsImprovingSummary] = useState(false);
   const [isImprovingExperience, setIsImprovingExperience] = useState(false);
   const { toast } = useToast();
   const resumePreviewRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState("editor");
   const [resumeStyle, setResumeStyle] = useState<ResumeStyle>("theme-modern");
+
+  useEffect(() => {
+    // Set workerSrc for pdfjs
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+  }, []);
 
   useEffect(() => {
     if (optimizationResult?.optimizedResume) {
@@ -58,6 +66,7 @@ export default function Home() {
     try {
       const result = await optimizeResume({ resumeText, jobDescription });
       setOptimizationResult(result);
+      setEditedResume(result.optimizedResume);
       setActiveTab("editor");
     } catch (error) {
       toast({
@@ -71,7 +80,8 @@ export default function Home() {
   };
 
   const handleImproveSummary = async () => {
-    if (!editedResume.trim()) {
+    const textToImprove = editedResume || resumeText;
+    if (!textToImprove.trim()) {
       toast({
         variant: "destructive",
         title: "Missing Resume",
@@ -81,7 +91,7 @@ export default function Home() {
     }
     setIsImprovingSummary(true);
     try {
-      const result = await improveSummaryAction({ resumeText: editedResume });
+      const result = await improveSummaryAction({ resumeText: textToImprove });
       setSummaryResult(result);
       setActiveTab("summary");
     } catch (error) {
@@ -96,7 +106,8 @@ export default function Home() {
   };
 
   const handleImproveExperience = async () => {
-    if (!editedResume.trim()) {
+    const textToImprove = editedResume || resumeText;
+    if (!textToImprove.trim()) {
       toast({
         variant: "destructive",
         title: "Missing Resume",
@@ -106,7 +117,7 @@ export default function Home() {
     }
     setIsImprovingExperience(true);
     try {
-      const result = await improveExperienceAction({ resumeText: editedResume });
+      const result = await improveExperienceAction({ resumeText: textToImprove });
       setExperienceResult(result);
       setActiveTab("experience");
     } catch (error) {
@@ -120,8 +131,56 @@ export default function Home() {
     }
   };
 
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== "application/pdf") {
+      toast({
+        variant: "destructive",
+        title: "Invalid File Type",
+        description: "Please upload a PDF file.",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const typedArray = new Uint8Array(e.target?.result as ArrayBuffer);
+        const pdf = await pdfjsLib.getDocument(typedArray).promise;
+        let textContent = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const text = await page.getTextContent();
+          textContent += text.items.map(item => 'str' in item ? item.str : '').join(' ') + '\n';
+        }
+        setResumeText(textContent);
+        toast({
+          title: "Success",
+          description: "Your resume has been imported.",
+        });
+      };
+      reader.readAsArrayBuffer(file);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "PDF Parsing Failed",
+        description: "Could not read the content of the PDF. Please try again or paste the text manually.",
+      });
+    } finally {
+      setIsUploading(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
   const handleDownloadTxt = () => {
-    const blob = new Blob([editedResume], { type: "text/plain;charset=utf-8" });
+    const text = editedResume || resumeText;
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = "resume.txt";
@@ -201,6 +260,8 @@ export default function Home() {
       variant: "destructive" as const
     },
   ];
+  
+  const currentResumeText = editedResume || resumeText;
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -214,18 +275,41 @@ export default function Home() {
                 <FileText className="text-primary"/>
                 Step 1: Input
               </CardTitle>
-              <CardDescription>Paste your resume and the job description.</CardDescription>
+              <CardDescription>Paste your resume, or upload a PDF.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="resume-input">Your Resume</Label>
+                <div className="flex justify-between items-center">
+                  <Label htmlFor="resume-input">Your Resume</Label>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    accept=".pdf"
+                    className="hidden"
+                    disabled={isUploading || isLoading}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading || isLoading}
+                  >
+                    {isUploading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="mr-2 h-4 w-4" />
+                    )}
+                    Upload PDF
+                  </Button>
+                </div>
                 <Textarea
                   id="resume-input"
-                  placeholder="Paste your full resume text here..."
+                  placeholder="Paste your full resume text here, or upload a PDF."
                   className="min-h-[200px] font-mono text-sm"
                   value={resumeText}
                   onChange={(e) => setResumeText(e.target.value)}
-                  disabled={isLoading}
+                  disabled={isLoading || isUploading}
                 />
               </div>
               <div className="space-y-2">
@@ -241,7 +325,7 @@ export default function Home() {
               </div>
             </CardContent>
             <CardFooter>
-              <Button onClick={handleOptimize} disabled={isLoading || !resumeText || !jobDescription} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
+              <Button onClick={handleOptimize} disabled={isLoading || isUploading || !resumeText || !jobDescription} className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -267,14 +351,14 @@ export default function Home() {
               <CardDescription>Edit your resume and review AI suggestions.</CardDescription>
             </CardHeader>
             <CardContent className="min-h-[468px]">
-              {isLoading ? (
+              {isLoading && !optimizationResult ? (
                 <div className="space-y-4">
                   <Skeleton className="h-10 w-full" />
                   <Skeleton className="h-40 w-full" />
                   <Skeleton className="h-10 w-full" />
                   <Skeleton className="h-40 w-full" />
                 </div>
-              ) : optimizationResult ? (
+              ) : optimizationResult || editedResume ? (
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                   <TabsList className="grid w-full grid-cols-5">
                     <TabsTrigger value="editor">Editor</TabsTrigger>
@@ -294,33 +378,39 @@ export default function Home() {
                     />
                   </TabsContent>
                   <TabsContent value="keywords" className="min-h-[380px] space-y-4 mt-4">
-                    <div>
-                      <h3 className="font-semibold mb-2">Missing Keywords</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {optimizationResult.missingKeywords.length > 0 ? (
-                          optimizationResult.missingKeywords.map((kw, i) => (
-                            <Badge key={`missing-${i}`} variant="destructive">{kw}</Badge>
-                          ))
-                        ) : (
-                          <p className="text-sm text-muted-foreground">No missing keywords found. Great job!</p>
-                        )}
-                      </div>
-                    </div>
-                     <div>
-                      <h3 className="font-semibold mb-2">Suggested Keywords</h3>
-                      <div className="flex flex-wrap gap-2">
-                         {optimizationResult.suggestedKeywords.length > 0 ? (
-                          optimizationResult.suggestedKeywords.map((kw, i) => (
-                            <Badge key={`suggested-${i}`} variant="secondary">{kw}</Badge>
-                          ))
-                        ) : (
-                          <p className="text-sm text-muted-foreground">No specific keywords to suggest.</p>
-                        )}
-                      </div>
-                    </div>
+                    {optimizationResult ? (
+                      <>
+                        <div>
+                          <h3 className="font-semibold mb-2">Missing Keywords</h3>
+                          <div className="flex flex-wrap gap-2">
+                            {optimizationResult.missingKeywords.length > 0 ? (
+                              optimizationResult.missingKeywords.map((kw, i) => (
+                                <Badge key={`missing-${i}`} variant="destructive">{kw}</Badge>
+                              ))
+                            ) : (
+                              <p className="text-sm text-muted-foreground">No missing keywords found. Great job!</p>
+                            )}
+                          </div>
+                        </div>
+                         <div>
+                          <h3 className="font-semibold mb-2">Suggested Keywords</h3>
+                          <div className="flex flex-wrap gap-2">
+                             {optimizationResult.suggestedKeywords.length > 0 ? (
+                              optimizationResult.suggestedKeywords.map((kw, i) => (
+                                <Badge key={`suggested-${i}`} variant="secondary">{kw}</Badge>
+                              ))
+                            ) : (
+                              <p className="text-sm text-muted-foreground">No specific keywords to suggest.</p>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground text-center pt-10">Run optimization to see keyword analysis.</p>
+                    )}
                   </TabsContent>
                    <TabsContent value="summary" className="min-h-[380px] space-y-4 mt-4">
-                      <Button onClick={handleImproveSummary} disabled={isImprovingSummary || !editedResume} size="sm" className="w-full">
+                      <Button onClick={handleImproveSummary} disabled={isImprovingSummary || !currentResumeText} size="sm" className="w-full">
                         {isImprovingSummary ? (
                           <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating...</>
                         ) : (
@@ -336,7 +426,7 @@ export default function Home() {
                       )}
                   </TabsContent>
                   <TabsContent value="experience" className="min-h-[380px] space-y-4 mt-4">
-                      <Button onClick={handleImproveExperience} disabled={isImprovingExperience || !editedResume} size="sm" className="w-full">
+                      <Button onClick={handleImproveExperience} disabled={isImprovingExperience || !currentResumeText} size="sm" className="w-full">
                         {isImprovingExperience ? (
                           <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating...</>
                         ) : (
@@ -402,7 +492,7 @@ export default function Home() {
                   </RadioGroup>
                 </div>
                 <div ref={resumePreviewRef} className={`resume-preview ${resumeStyle}`}>
-                    {isLoading && !optimizationResult ? (
+                    {(isLoading || isUploading) && !currentResumeText ? (
                         <div className="space-y-4 animate-pulse">
                             <Skeleton className="h-8 w-1/2 mx-auto" />
                             <Skeleton className="h-4 w-3/4 mx-auto" />
@@ -412,16 +502,16 @@ export default function Home() {
                             <Skeleton className="h-6 w-1/4 mt-4" />
                             <Skeleton className="h-4 w-full" />
                         </div>
-                    ) : (editedResume ? parseResumeForPreview(editedResume) : <p className="text-center text-muted-foreground py-16">Preview will appear here</p>)}
+                    ) : (currentResumeText ? parseResumeForPreview(currentResumeText) : <p className="text-center text-muted-foreground py-16">Preview will appear here</p>)}
                 </div>
               </div>
             </CardContent>
             <CardFooter className="flex flex-col sm:flex-row gap-2">
-              <Button onClick={handleDownloadPdf} disabled={!editedResume || isLoading} variant="default" className="w-full">
+              <Button onClick={handleDownloadPdf} disabled={!currentResumeText || isLoading || isUploading} variant="default" className="w-full">
                 <Download className="mr-2 h-4 w-4" />
                 Download PDF
               </Button>
-              <Button onClick={handleDownloadTxt} disabled={!editedResume || isLoading} variant="outline" className="w-full">
+              <Button onClick={handleDownloadTxt} disabled={!currentResumeText || isLoading || isUploading} variant="outline" className="w-full">
                 <Download className="mr-2 h-4 w-4" />
                 Download TXT
               </Button>
