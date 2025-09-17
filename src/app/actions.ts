@@ -6,6 +6,11 @@ import {
   type ATSKeywordOptimizationOutput,
 } from '@/ai/flows/ats-keyword-optimization';
 import {
+  improveExperience,
+  type ExperienceImprovementInput,
+  type ExperienceImprovementOutput,
+} from '@/ai/flows/experience-improvement';
+import {
   improveResumeSummary,
   type ResumeSummaryImprovementInput,
   type ResumeSummaryImprovementOutput,
@@ -36,5 +41,17 @@ export async function improveSummaryAction(
   } catch (error) {
     console.error('Error improving summary:', error);
     throw new Error('Failed to improve summary. Please try again.');
+  }
+}
+
+export async function improveExperienceAction(
+  input: ExperienceImprovementInput
+): Promise<ExperienceImprovementOutput> {
+  try {
+    const result = await improveExperience(input);
+    return result;
+  } catch (error) {
+    console.error('Error improving experience:', error);
+    throw new Error('Failed to improve experience. Please try again.');
   }
 }

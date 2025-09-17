@@ -11,9 +11,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import { optimizeResume, improveSummaryAction } from "@/app/actions";
+import { optimizeResume, improveSummaryAction, improveExperienceAction } from "@/app/actions";
 import type { ATSKeywordOptimizationOutput } from "@/ai/flows/ats-keyword-optimization";
 import type { ResumeSummaryImprovementOutput } from "@/ai/flows/resume-summary-improvement";
+import type { ExperienceImprovementOutput } from "@/ai/flows/experience-improvement";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -26,8 +27,10 @@ export default function Home() {
   const [editedResume, setEditedResume] = useState("");
   const [optimizationResult, setOptimizationResult] = useState<ATSKeywordOptimizationOutput | null>(null);
   const [summaryResult, setSummaryResult] = useState<ResumeSummaryImprovementOutput | null>(null);
+  const [experienceResult, setExperienceResult] = useState<ExperienceImprovementOutput | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isImprovingSummary, setIsImprovingSummary] = useState(false);
+  const [isImprovingExperience, setIsImprovingExperience] = useState(false);
   const { toast } = useToast();
   const resumePreviewRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState("editor");
@@ -51,6 +54,7 @@ export default function Home() {
     setIsLoading(true);
     setOptimizationResult(null);
     setSummaryResult(null);
+    setExperienceResult(null);
     try {
       const result = await optimizeResume({ resumeText, jobDescription });
       setOptimizationResult(result);
@@ -91,6 +95,31 @@ export default function Home() {
     }
   };
 
+  const handleImproveExperience = async () => {
+    if (!editedResume.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Missing Resume",
+        description: "Please provide your resume text or run the optimization first.",
+      });
+      return;
+    }
+    setIsImprovingExperience(true);
+    try {
+      const result = await improveExperienceAction({ resumeText: editedResume });
+      setExperienceResult(result);
+      setActiveTab("experience");
+    } catch (error) {
+       toast({
+        variant: "destructive",
+        title: "Experience Improvement Failed",
+        description: error instanceof Error ? error.message : "An unknown error occurred.",
+      });
+    } finally {
+      setIsImprovingExperience(false);
+    }
+  };
+
   const handleDownloadTxt = () => {
     const blob = new Blob([editedResume], { type: "text/plain;charset=utf-8" });
     const link = document.createElement("a");
@@ -121,7 +150,7 @@ export default function Home() {
     const lines = text.split('\n');
     let isFirstH1 = true;
 
-    const commonHeaders = ["summary", "experience", "education", "skills", "projects", "profile", "professional experience", "technical skills", "certifications"];
+    const commonHeaders = ["summary", "experience", "education", "skills", "projects", "profile", "professional experience", "technical skills", "certifications", "work experience"];
 
     return lines.map((line, index) => {
         const trimmedLine = line.trim();
@@ -247,10 +276,11 @@ export default function Home() {
                 </div>
               ) : optimizationResult ? (
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                  <TabsList className="grid w-full grid-cols-4">
+                  <TabsList className="grid w-full grid-cols-5">
                     <TabsTrigger value="editor">Editor</TabsTrigger>
                     <TabsTrigger value="keywords">Keywords</TabsTrigger>
                     <TabsTrigger value="summary">Summary</TabsTrigger>
+                    <TabsTrigger value="experience">Experience</TabsTrigger>
                     <TabsTrigger value="format">Format Check</TabsTrigger>
                   </TabsList>
                   <TabsContent value="editor" className="mt-4">
@@ -302,6 +332,22 @@ export default function Home() {
                         <div className="p-4 border rounded-lg bg-secondary/50">
                           <h3 className="font-semibold mb-2">AI-Suggested Summary</h3>
                           <p className="text-sm text-secondary-foreground">{summaryResult.improvedSummary}</p>
+                        </div>
+                      )}
+                  </TabsContent>
+                  <TabsContent value="experience" className="min-h-[380px] space-y-4 mt-4">
+                      <Button onClick={handleImproveExperience} disabled={isImprovingExperience || !editedResume} size="sm" className="w-full">
+                        {isImprovingExperience ? (
+                          <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating...</>
+                        ) : (
+                          <><Sparkles className="mr-2 h-4 w-4" />Improve Experience with AI</>
+                        )}
+                      </Button>
+                      {isImprovingExperience && !experienceResult && <Skeleton className="h-32 w-full" />}
+                      {experienceResult && (
+                        <div className="p-4 border rounded-lg bg-secondary/50">
+                          <h3 className="font-semibold mb-2">AI-Suggested Experience Section</h3>
+                          <p className="text-sm text-secondary-foreground whitespace-pre-line">{experienceResult.improvedExperience}</p>
                         </div>
                       )}
                   </TabsContent>
